@@ -15,7 +15,7 @@ def star_graph_maker(numOfPathsFromSource,lenOfEachPath, reverse=False):
         oldNode = source
         for i in range(lenOfEachPath - 1):
             newNode = nodes.pop()
-            edgeList.append([oldNode, newNode])
+            edgeList.append((oldNode, newNode))
             oldNode = newNode
             if p == 0:
                 path.append(oldNode)
@@ -39,12 +39,11 @@ def generate_and_save_data(numOfSamples, numOfPathsFromSource,lenOfEachPath, rev
         for x in range(numOfSamples):
             random.seed(x)
             edgeList, path, source, goal = star_graph_maker(numOfPathsFromSource,lenOfEachPath, reverse)
-            writer.writerow([str(edgeList), str(path), source, goal])
+            writer.writerow([edgeList, path, source, goal])
             # loading bar
             if showLoadingBar:
                 numberOfRectangles = int((x+1)*50/numOfSamples)
                 bar = '█'*numberOfRectangles + " "*(50-numberOfRectangles)
                 print(f'\r|{bar}| {(x+1)*100/numOfSamples:.1f}%', end="", flush=True)
-    
-generate_and_save_data(1000, 4, 4)
 
+generate_and_save_data(10000, 4, 4)
