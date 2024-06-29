@@ -46,4 +46,4 @@ def generate_and_save_data(numOfSamples, numOfPathsFromSource,lenOfEachPath, rev
                 bar = '█'*numberOfRectangles + " "*(50-numberOfRectangles)
                 print(f'\r|{bar}| {(x+1)*100/numOfSamples:.1f}%', end="", flush=True)
 
-generate_and_save_data(10000, 4, 4)
+generate_and_save_data(100, 4, 4)
