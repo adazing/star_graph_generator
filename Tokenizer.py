@@ -15,7 +15,7 @@ class Tokenizer:
         self.encoder['='] = maxNodes + 1
         self.encoder['/'] = maxNodes + 2
         self.encoder['$'] = maxNodes + 3
-        self.encoder[','] = maxNodes + 4
+        # self.encoder[','] = maxNodes + 4
         self.eot = maxNodes + 5
 
         self.decoder = {i: i for i in range(maxNodes)}
@@ -23,9 +23,9 @@ class Tokenizer:
         self.decoder[maxNodes + 1] = '='
         self.decoder[maxNodes + 2] = '/'
         self.decoder[maxNodes + 3] = '$'
-        self.decoder[maxNodes + 4] = ','
-        self.decoder[maxNodes + 5] = ''
-        # self.decoder[-1] = ':'
+        # self.decoder[maxNodes + 4] = ','
+        self.decoder[maxNodes + 4] = ''
+        self.decoder[-1] = ':'
     
     def encode(self, data):
         
@@ -71,48 +71,48 @@ class Tokenizer:
 
 
 
-dir_path = os.path.join(os.path.dirname(__file__), "tokenized_data")
+# dir_path = os.path.join(os.path.dirname(__file__), "tokenized_data")
 
-shard_size = int(1e7) # 100M tokens per shard, total of 100 shards
-token_count = 0
+# shard_size = int(1e7) # 100M tokens per shard, total of 100 shards
+# token_count = 0
 
-lines = open("data.txt", "r").readlines()
-num_of_lines = len(lines)
+# lines = open("data.txt", "r").readlines()
+# num_of_lines = len(lines)
 
-tokenizer = Tokenizer(4, 4, maxNodes)
+# tokenizer = Tokenizer(4, 4, maxNodes)
 
-split="train"
-shard_index = 0
+# split="train"
+# shard_index = 0
 
-# os.mkdir(dir_path)
+# # os.mkdir(dir_path)
 
-# while True:
-all_tokens_np = np.empty((shard_size,), dtype=np.uint16)
-# eot = maxNodes + 4
-for l in range(num_of_lines):
-    numberOfRectangles = int((l+1)*50/num_of_lines)
-    bar = '█'*numberOfRectangles + " "*(50-numberOfRectangles)
-    print(f'\r|{bar}| {(l+1)*100/num_of_lines:.1f}%', end="", flush=True)
+# # while True:
+# all_tokens_np = np.empty((shard_size,), dtype=np.uint16)
+# # eot = maxNodes + 4
+# for l in range(num_of_lines):
+#     numberOfRectangles = int((l+1)*50/num_of_lines)
+#     bar = '█'*numberOfRectangles + " "*(50-numberOfRectangles)
+#     print(f'\r|{bar}| {(l+1)*100/num_of_lines:.1f}%', end="", flush=True)
     
-    prefix, target = lines[l].strip().split("=")
-    prefix += "="
-    # print(prefix)
-    tokens, size = tokenizer.tokenize(prefix, target)
-    # print(tokens, size)
-    # print(token_count)
+#     prefix, target = lines[l].strip().split("=")
+#     prefix += "="
+#     # print(prefix)
+#     tokens, size = tokenizer.tokenize(prefix, target)
+#     # print(tokens, size)
+#     # print(token_count)
 
-    if token_count+size<shard_size:
-        all_tokens_np[token_count:token_count+size] = tokens
-        token_count += size
-    else:
-        shard_index += 1
-        filename = os.path.join(dir_path, f"data_{split}_{shard_index:06d}")
-        np.save(filename, all_tokens_np)
-        token_count = 0
-        all_tokens_np = np.empty((shard_size,), dtype=np.uint16)
+#     if token_count+size<shard_size:
+#         all_tokens_np[token_count:token_count+size] = tokens
+#         token_count += size
+#     else:
+#         shard_index += 1
+#         filename = os.path.join(dir_path, f"data_{split}_{shard_index:06d}")
+#         np.save(filename, all_tokens_np)
+#         token_count = 0
+#         all_tokens_np = np.empty((shard_size,), dtype=np.uint16)
 
-if token_count!=0:
-    filename = os.path.join(dir_path, f"data_{split}_{shard_index:06d}")
-    np.save(filename, all_tokens_np)
-    token_count = 0
-    all_tokens_np = np.empty((shard_size,), dtype=np.uint16)
+# if token_count!=0:
+#     filename = os.path.join(dir_path, f"data_{split}_{shard_index:06d}")
+#     np.save(filename, all_tokens_np)
+#     token_count = 0
+#     all_tokens_np = np.empty((shard_size,), dtype=np.uint16)
