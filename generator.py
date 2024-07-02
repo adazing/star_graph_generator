@@ -2,6 +2,7 @@ import random
 # import csv
 import config
 
+
 def star_graph_maker(numOfPathsFromSource,lenOfEachPath, maxNodes, reverse=False):
     # numOfNodes = numOfPathsFromSource * (lenOfEachPath - 1) + 1
     nodes = list(range(maxNodes))
