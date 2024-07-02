@@ -27,7 +27,6 @@ def star_graph_maker(numOfPathsFromSource,lenOfEachPath, maxNodes, reverse=False
         path = path[::-1]
     
     return edgeList, path, source, goal
-        
 
 # print(star_graph_maker(4, 4))
 
@@ -42,5 +41,7 @@ def generate_and_save_data(numOfSamples, numOfPathsFromSource, lenOfEachPath, ma
                 numberOfRectangles = int((x+1)*50/numOfSamples)
                 bar = '█'*numberOfRectangles + " "*(50-numberOfRectangles)
                 print(f'\r|{bar}| {(x+1)*100/numOfSamples:.1f}%', end="", flush=True)
+
+
 
 generate_and_save_data(1000000, 4, 4, 50)
