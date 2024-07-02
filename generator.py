@@ -1,16 +1,18 @@
 import random
+# import csv
 import config
+
 
 def star_graph_maker(numOfPathsFromSource,lenOfEachPath, maxNodes, reverse=False):
     # numOfNodes = numOfPathsFromSource * (lenOfEachPath - 1) + 1
     nodes = list(range(maxNodes))
     random.shuffle(nodes)
-    
+   
     source = nodes.pop()
-    
+   
     edgeList = []
     path = [source]
-    
+   
     for p in range(numOfPathsFromSource):
         oldNode = source
         for i in range(lenOfEachPath - 1):
@@ -22,13 +24,15 @@ def star_graph_maker(numOfPathsFromSource,lenOfEachPath, maxNodes, reverse=False
         if p == 0:
             goal = oldNode
     random.shuffle(edgeList)
-    
+   
     if reverse:
         path = path[::-1]
-    
+   
     return edgeList, path, source, goal
 
+
 # print(star_graph_maker(4, 4))
+
 
 def generate_and_save_data(numOfSamples, numOfPathsFromSource, lenOfEachPath, maxNodes, reverse=False, showLoadingBar = True):
     with open('data.txt', 'w') as file:
