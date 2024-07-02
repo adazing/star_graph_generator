@@ -45,5 +45,7 @@ def generate_and_save_data(numOfSamples, numOfPathsFromSource, lenOfEachPath, ma
                 print(f'\r|{bar}| {(x+1)*100/numOfSamples:.1f}%', end="", flush=True)
 
 
+
+
 if __name__ == "__main__":
     generate_and_save_data(config.numOfSamples, config.numOfPathsFromSource, config.lenOfEachPath, config.maxNodes, config.reverse, config.showLoadingBar)
