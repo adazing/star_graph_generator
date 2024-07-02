@@ -1,5 +1,4 @@
 import random
-import csv
 
 def star_graph_maker(numOfPathsFromSource,lenOfEachPath, maxNodes, reverse=False):
     # numOfNodes = numOfPathsFromSource * (lenOfEachPath - 1) + 1
