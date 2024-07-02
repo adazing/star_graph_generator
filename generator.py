@@ -1,9 +1,8 @@
 import random
-import csv
 
-def star_graph_maker(numOfPathsFromSource,lenOfEachPath, reverse=False):
-    numOfNodes = numOfPathsFromSource * (lenOfEachPath - 1) + 1
-    nodes = list(range(numOfNodes))
+def star_graph_maker(numOfPathsFromSource,lenOfEachPath, maxNodes, reverse=False):
+    # numOfNodes = numOfPathsFromSource * (lenOfEachPath - 1) + 1
+    nodes = list(range(maxNodes))
     random.shuffle(nodes)
     
     source = nodes.pop()
@@ -27,23 +26,21 @@ def star_graph_maker(numOfPathsFromSource,lenOfEachPath, reverse=False):
         path = path[::-1]
     
     return edgeList, path, source, goal
-        
 
 # print(star_graph_maker(4, 4))
 
-def generate_and_save_data(numOfSamples, numOfPathsFromSource,lenOfEachPath, reverse=False, showLoadingBar = True):
-    with open('data.csv', 'w', newline="") as file:
-        writer = csv.writer(file)
-        
-        writer.writerow(["edgeList", "path", "source", "goal"])
+def generate_and_save_data(numOfSamples, numOfPathsFromSource, lenOfEachPath, maxNodes, reverse=False, showLoadingBar = True):
+    with open('data.txt', 'w') as file:
         for x in range(numOfSamples):
             random.seed(x)
-            edgeList, path, source, goal = star_graph_maker(numOfPathsFromSource,lenOfEachPath, reverse)
-            writer.writerow([edgeList, path, source, goal])
+            edgeList, path, source, goal = star_graph_maker(numOfPathsFromSource,lenOfEachPath, maxNodes, reverse)
+            file.write("|".join([",".join(str(i) for i in x) for x in edgeList])+f"/{source},{goal}={','.join([str(i) for i in path])}\n")
             # loading bar
             if showLoadingBar:
                 numberOfRectangles = int((x+1)*50/numOfSamples)
                 bar = '█'*numberOfRectangles + " "*(50-numberOfRectangles)
                 print(f'\r|{bar}| {(x+1)*100/numOfSamples:.1f}%', end="", flush=True)
 
-generate_and_save_data(100, 4, 4)
+
+
+generate_and_save_data(1000000, 4, 4, 50)
