@@ -7,6 +7,6 @@ maxNodes = 50
 
 reverse = False
 
-numOfSamples = 10000
+numOfSamples = 100000
 
 showLoadingBar = True

@@ -14,7 +14,7 @@ import config
 
 
 local_dir = "tokenized_data"
-shard_size = int(1e6) # 100M tokens per shard, total of 100 shards
+shard_size = 7*int(1e4) # 100M tokens per shard, total of 100 shards
 
 
 data = open("data.txt", "r").readlines()
@@ -92,6 +92,7 @@ if __name__ == "__main__":
                 remainder = shard_size - token_count
                 progress_bar.update(remainder)
                 all_tokens_np[token_count:token_count+remainder] = tokens[:remainder]
+                # print(all_tokens_np)
                 write_datafile(filename, all_tokens_np)
                 shard_index += 1
                 progress_bar = None
