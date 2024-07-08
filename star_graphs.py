@@ -12,9 +12,11 @@ from tqdm import tqdm # pip install tqdm
 from tokenizer import Tokenizer
 import config
 
+T = config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3 + config.lenOfEachPath # sequence length
+
 
 local_dir = "tokenized_data"
-shard_size = int(1e6) # 100M tokens per shard, total of 100 shards
+shard_size = T * int(1e4)
 
 
 data = open("data.txt", "r").readlines()
