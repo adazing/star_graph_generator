@@ -243,9 +243,9 @@ class DataLoaderLite:
         # print(self.tokens.shape)
         buf = self.tokens[self.current_position : self.current_position+B*T]
         # print(buf.shape)
-        x = (buf[:-1]).clone().view(B, T)[:, :-1] # inputs
-        y = (buf[1:]).view(B, T)[:, 1:] # targets
-        y[:, :-config.lenOfEachPath] = config.maxNodes + 5
+        x = buf.clone().view(B, T)[:, :-1] # inputs
+        y = buf.clone().view(B, T)[:, 1:] # targets
+        y[:, :-config.lenOfEachPath] = config.maxNodes + 4 # empty
         # advance the position in the tensor
         self.current_position += B * T * self.num_processes
         # if loading the next batch would be out of bounds, advance to next shard

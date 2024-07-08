@@ -28,8 +28,8 @@ class Tokenizer:
         self.decoder[maxNodes + 2] = '/'
         self.decoder[maxNodes + 3] = '$'
         # self.decoder[maxNodes + 4] = ','
-        self.decoder[maxNodes + 4] = ''
-        self.decoder[-1] = ':'
+        # self.decoder[maxNodes + 4] = ''
+        # self.decoder[-1] = ':'
    
     def encode(self, data):
        
@@ -62,7 +62,9 @@ class Tokenizer:
         '''
         # out = [eot]
         prefix_len = len(self.encode(prefix))
+        # print(self.encode(prefix), prefix_len)
         target_len = len(self.encode(target))
+        # print(self.encode(target), target_len)
         # same_len = True
         # for prefix, target in data_list:
         prefix = np.asarray(self.encode(prefix))
@@ -72,7 +74,7 @@ class Tokenizer:
 
 
         # Check if all prefixes and all targets have the same length
-        return seq, prefix_len + target_len + 1
+        return seq, prefix_len + target_len
 
 
 # tokenizer = tokenize()
