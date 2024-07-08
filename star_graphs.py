@@ -14,7 +14,7 @@ import config
 
 
 local_dir = "tokenized_data"
-shard_size = 7*int(1e3) # 100M tokens per shard, total of 100 shards
+shard_size = int(1e6) # 100M tokens per shard, total of 100 shards
 
 
 data = open("data.txt", "r").readlines()
