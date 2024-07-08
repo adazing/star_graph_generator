@@ -245,6 +245,7 @@ class DataLoaderLite:
         # print(buf.shape)
         x = buf.clone().view(B, T)[:, :-1] # inputs
         y = buf.clone().view(B, T)[:, 1:] # targets
+        print(x)
         y[:, :-config.lenOfEachPath] = config.maxNodes + 4 # empty
         # advance the position in the tensor
         self.current_position += B * T * self.num_processes
