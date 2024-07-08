@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import config
 # from hellaswag import render_example, iterate_examples
 # -----------------------------------------------------------------------------
 
@@ -242,8 +243,9 @@ class DataLoaderLite:
         # print(self.tokens.shape)
         buf = self.tokens[self.current_position : self.current_position+B*T+1]
         # print(buf.shape)
-        x = (buf[:-1]).view(B, T) # inputs
-        y = (buf[1:]).view(B, T) # targets
+        x = (buf[:-1]).clone().view(B, T)[:, :-1] # inputs
+        y = (buf[1:]).view(B, T)[:, 1:] # targets
+        y[:, :-config.lenOfEachPath] = -1
         # advance the position in the tensor
         self.current_position += B * T * self.num_processes
         # if loading the next batch would be out of bounds, advance to next shard
