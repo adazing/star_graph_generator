@@ -58,7 +58,7 @@ def tokenize(line):
     return tokens_np_uint16
 
 
-# print(tokenize("24,25|16,32|24,16|24,22|26,2|19,30|48,26|32,31|25,19|24,48|22,37|37,13/24,2=24,48,26,2"))
+# print(tokenize("8,13|6,44|30,41|8,7|13,6|31,28|8,36|7,31|4,16|36,4|41,24|8,30/8,16=8,36,4,16"))
 
 
 def write_datafile(filename, tokens_np):

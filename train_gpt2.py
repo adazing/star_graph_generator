@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import config
 # from hellaswag import render_example, iterate_examples
 # -----------------------------------------------------------------------------
 
@@ -133,7 +134,6 @@ class GPT(nn.Module):
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
         from transformers import GPT2LMHeadModel
         print("loading weights from pretrained gpt: %s" % model_type)
-
         # n_layer, n_head and n_embd are determined from model_type
         config_args = {
             'gpt2':         dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
@@ -240,14 +240,15 @@ class DataLoaderLite:
     def next_batch(self):
         B, T = self.B, self.T
         # print(self.tokens.shape)
-        buf = self.tokens[self.current_position : self.current_position+B*T+1]
+        buf = self.tokens[self.current_position : self.current_position+B*T]
         # print(buf.shape)
-        x = (buf[:-1]).view(B, T) # inputs
-        y = (buf[1:]).view(B, T) # targets
+        x = buf.reshape(B, T)[:, :-1] # inputs
+        y = buf.reshape(B, T)[:, 1:] # targets
+        y[:, :-config.lenOfEachPath] = -1
         # advance the position in the tensor
         self.current_position += B * T * self.num_processes
         # if loading the next batch would be out of bounds, advance to next shard
-        if self.current_position + (B * T * self.num_processes + 1) > len(self.tokens):
+        if self.current_position + (B * T * self.num_processes) > len(self.tokens):
             self.current_shard = (self.current_shard + 1) % len(self.shards)
             self.tokens = load_tokens(self.shards[self.current_shard])
             self.current_position = B * T * self.process_rank
@@ -323,9 +324,10 @@ if torch.cuda.is_available():
 
 enc = tiktoken.get_encoding("gpt2")
 
-total_batch_size = 524288 # 2**19, ~0.5M, in number of tokens
+# total_batch_size = 524288 # 2**19, ~0.5M, in number of tokens
+total_batch_size = 704
 B = 16 # micro batch size
-T = 1024 # sequence length
+T = 44 # sequence length
 assert total_batch_size % (B * T * ddp_world_size) == 0, "make sure total_batch_size is divisible by B * T * ddp_world_size"
 grad_accum_steps = total_batch_size // (B * T * ddp_world_size)
 if master_process:
