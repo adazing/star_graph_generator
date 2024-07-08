@@ -71,7 +71,7 @@ class Block(nn.Module):
 @dataclass
 class GPTConfig:
     block_size: int = 1024 # max sequence length
-    vocab_size: int = 50257 # number of tokens: 50,000 BPE merges + 256 bytes tokens + 1 <|endoftext|> token
+    vocab_size: int = 60 # number of tokens: 50,000 BPE merges + 256 bytes tokens + 1 <|endoftext|> token
     n_layer: int = 12 # number of layers
     n_head: int = 12 # number of heads
     n_embd: int = 768 # embedding dimension
@@ -324,7 +324,7 @@ if torch.cuda.is_available():
 enc = tiktoken.get_encoding("gpt2")
 
 total_batch_size = 524288 # 2**19, ~0.5M, in number of tokens
-B = 64 # micro batch size
+B = 16 # micro batch size
 T = 1024 # sequence length
 assert total_batch_size % (B * T * ddp_world_size) == 0, "make sure total_batch_size is divisible by B * T * ddp_world_size"
 grad_accum_steps = total_batch_size // (B * T * ddp_world_size)
@@ -335,12 +335,19 @@ if master_process:
 train_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="train")
 val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val")
 
+# print(device, torch.cuda.memory_allocated(device))
+
 torch.set_float32_matmul_precision('high')
 
 # create model
 model = GPT(GPTConfig(vocab_size=50304))
+
+
+
 # model = GPT.from_pretrained("gpt2") # or init from OpenAI GPT-2
 model.to(device)
+
+# print(device, torch.cuda.memory_allocated(device))
 use_compile = False # torch.compile interferes with HellaSwag eval and Generation. TODO fix
 if use_compile:
     model = torch.compile(model)
@@ -375,7 +382,10 @@ log_file = os.path.join(log_dir, f"log.txt")
 with open(log_file, "w") as f: # open for writing to clear the file
     pass
 
+# print(device, torch.cuda.memory_allocated(device))
+
 for step in range(max_steps):
+    # print(device, torch.cuda.memory_allocated(device))
     t0 = time.time()
     last_step = (step == max_steps - 1)
 
@@ -384,18 +394,23 @@ for step in range(max_steps):
         model.eval()
         val_loader.reset()
         with torch.no_grad():
+            # print("blah1", device, torch.cuda.memory_allocated(device))
             val_loss_accum = 0.0
             val_loss_steps = 20
             for _ in range(val_loss_steps):
+                # print("blah2", device, torch.cuda.memory_allocated(device))
                 x, y = val_loader.next_batch()
                 x, y = x.to(device), y.to(device)
+                # print("blah3", device, torch.cuda.memory_allocated(device))
                 with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+                    # print("blah3", device, torch.cuda.memory_allocated(device))
                     logits, loss = model(x, y)
+                    # print("blah4", device, torch.cuda.memory_allocated(device))
                 loss = loss / val_loss_steps
                 val_loss_accum += loss.detach()
         if ddp:
             dist.all_reduce(val_loss_accum, op=dist.ReduceOp.AVG)
-        if master_process or True:
+        if master_process:
             print(f"validation loss: {val_loss_accum.item():.4f}")
             with open(log_file, "a") as f:
                 f.write(f"{step} val {val_loss_accum.item():.4f}\n")
