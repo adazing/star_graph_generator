@@ -19,7 +19,7 @@ class Tokenizer:
         self.encoder['/'] = maxNodes + 2
         self.encoder['$'] = maxNodes + 3
         # self.encoder[','] = maxNodes + 4
-        self.eot = maxNodes + 5
+        # self.eot = maxNodes + 5
 
 
         self.decoder = {i: i for i in range(maxNodes)}
@@ -67,7 +67,7 @@ class Tokenizer:
         # for prefix, target in data_list:
         prefix = np.asarray(self.encode(prefix))
         target = np.asarray(self.encode(target))
-        seq = np.concatenate([[self.eot], prefix, target])
+        seq = np.concatenate([prefix, target])
         # out.append(seq)
 
 

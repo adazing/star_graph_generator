@@ -40,7 +40,7 @@ os.makedirs(DATA_CACHE_DIR, exist_ok=True)
 tokenizer = Tokenizer(config.numOfPathsFromSource, config.lenOfEachPath, config.maxNodes)
 
 
-eot = tokenizer.eot
+# eot = tokenizer.eot
 
 
 def tokenize(line):

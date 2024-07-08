@@ -10,3 +10,5 @@ reverse = False
 numOfSamples = 100000
 
 showLoadingBar = True
+
+# numOfPathsFromSource * (lenOfEachPath - 1) * 3 + 3 + lenOfEachPath
