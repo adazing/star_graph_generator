@@ -242,8 +242,8 @@ class DataLoaderLite:
         # print(self.tokens.shape)
         buf = self.tokens[self.current_position : self.current_position+B*T]
         # print(buf.shape)
-        x = buf.reshape(B, T)[:, :-1] # inputs
-        y = buf.reshape(B, T)[:, 1:] # targets
+        x = buf.clone().reshape(B, T)[:, :-1] # inputs
+        y = buf.clone().reshape(B, T)[:, 1:] # targets
         y[:, :-config.lenOfEachPath] = -1
         # advance the position in the tensor
         self.current_position += B * T * self.num_processes
