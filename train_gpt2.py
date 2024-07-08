@@ -127,7 +127,39 @@ class GPT(nn.Module):
         if targets is not None:
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
         return logits, loss
-
+    
+    def generate(self, idx):
+        # for l in X:
+        B, T = idx.size()
+        assert T <= self.config.block_size, f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
+        with torch.no_grad():
+            for x in range():
+                while idx.size(1)<T:
+                    # forward the token and posisition embeddings
+                    pos = torch.arange(0, T, dtype=torch.long, device=idx.device) # shape (T)
+                    pos_emb = self.transformer.wpe(pos) # position embeddings of shape (T, n_embd)
+                    tok_emb = self.transformer.wte(idx) # token embeddings of shape (B, T, n_embd)
+                    x = tok_emb + pos_emb
+                    # forward the blocks of the transformer
+                    for block in self.transformer.h:
+                        x = block(x)
+                    # forward the final layernorm and the classifier
+                    x = self.transformer.ln_f(x)
+                    logits = self.lm_head(x)[0] # (B, T, vocab_size)
+                    logits = logits[:, -1, :] # (B, vocab_size)
+                    probs = F.softmax(logits, dim = -1)
+                    # do top-k sampling of 50 (huggingface pipeline default)
+                    topk_probs, topk_indices = torch.topk(probs, 50, dim=-1)
+                    # select a token from the top-k probabilities
+                    ix = torch.multinomial(topk_probs, 1) # (B, 1)
+                    # gather the corresponding indices
+                    xcol = torch.gather(topk_indices, -1, ix)
+                    # append to the sequence
+                    x = torch.cat((x, xcol), dim = 1)
+        
+            
+                
+    
     @classmethod
     def from_pretrained(cls, model_type):
         """Loads pretrained GPT-2 model weights from huggingface"""
