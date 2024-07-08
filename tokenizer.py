@@ -75,8 +75,7 @@ class Tokenizer:
         return seq, prefix_len + target_len + 1
 
 
-
-
+# tokenizer = tokenize()
 
 
 # dir_path = os.path.join(os.path.dirname(__file__), "tokenized_data")
