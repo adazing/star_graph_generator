@@ -128,35 +128,26 @@ class GPT(nn.Module):
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
         return logits, loss
     
-    def generate(self, idx):
-        # for l in X:
-        B, T = idx.size()
-        assert T <= self.config.block_size, f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
-        with torch.no_grad():
-            for x in range():
-                while idx.size(1)<T:
-                    # forward the token and posisition embeddings
-                    pos = torch.arange(0, T, dtype=torch.long, device=idx.device) # shape (T)
-                    pos_emb = self.transformer.wpe(pos) # position embeddings of shape (T, n_embd)
-                    tok_emb = self.transformer.wte(idx) # token embeddings of shape (B, T, n_embd)
-                    x = tok_emb + pos_emb
-                    # forward the blocks of the transformer
-                    for block in self.transformer.h:
-                        x = block(x)
-                    # forward the final layernorm and the classifier
-                    x = self.transformer.ln_f(x)
-                    logits = self.lm_head(x)[0] # (B, T, vocab_size)
-                    logits = logits[:, -1, :] # (B, vocab_size)
-                    probs = F.softmax(logits, dim = -1)
-                    # do top-k sampling of 50 (huggingface pipeline default)
-                    topk_probs, topk_indices = torch.topk(probs, 50, dim=-1)
-                    # select a token from the top-k probabilities
-                    ix = torch.multinomial(topk_probs, 1) # (B, 1)
-                    # gather the corresponding indices
-                    xcol = torch.gather(topk_indices, -1, ix)
-                    # append to the sequence
-                    x = torch.cat((x, xcol), dim = 1)
-        
+    def generate(self, idx, max_length=30):
+        self.eval()  # Set the model to evaluation mode
+        generated = idx  # Start with the input indices
+        device = idx.device
+
+        while generated.size(1) < max_length:
+            # Get the last token in the current sequence to use as input
+            with torch.no_grad():
+                # Generate logits for the current sequence
+                logits, _ = self.forward(generated)
+                # Take the logits from the last time step
+                logits = logits[:, -1, :]
+                # Convert logits to probabilities
+                probs = F.softmax(logits, dim=-1)
+                # Sample from the probabilities to get the next token
+                next_token = torch.multinomial(probs, num_samples=1)
+                # Append the new token to the sequence
+                generated = torch.cat((generated, next_token), dim=1)
+
+        return generated
             
                 
     
@@ -393,7 +384,7 @@ raw_model = model.module if ddp else model # always contains the "raw" unwrapped
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715
-max_steps = 19073 # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
+max_steps = 1000 # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
 def get_lr(it):
     # 1) linear warmup for warmup_iters steps
     if it < warmup_steps:
@@ -449,7 +440,7 @@ for step in range(max_steps):
             print(f"validation loss: {val_loss_accum.item():.4f}")
             with open(log_file, "a") as f:
                 f.write(f"{step} val {val_loss_accum.item():.4f}\n")
-            if step > 0 and (step % 5000 == 0 or last_step):
+            if step > 0 and (step % 500 == 0 or last_step):
                 # optionally write model checkpoints
                 checkpoint_path = os.path.join(log_dir, f"model_{step:05d}.pt")
                 checkpoint = {
