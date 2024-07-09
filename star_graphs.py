@@ -16,7 +16,7 @@ T = config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3 + config.le
 
 
 local_dir = "tokenized_data"
-shard_size = T * int(1e4)
+shard_size = config.shard_size
 
 
 data = open("data.txt", "r").readlines()

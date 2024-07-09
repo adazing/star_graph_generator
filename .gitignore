@@ -1,2 +1,4 @@
 tokenized_data/
 data.txt
+log/
+__pycache__/

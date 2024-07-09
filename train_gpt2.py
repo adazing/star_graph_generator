@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import config
+from evaluate import evaluate
 # from hellaswag import render_example, iterate_examples
 # -----------------------------------------------------------------------------
 
@@ -125,10 +126,11 @@ class GPT(nn.Module):
         logits = self.lm_head(x) # (B, T, vocab_size)
         loss = None
         if targets is not None:
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index = -1)
         return logits, loss
     
-    def generate(self, idx, max_length=30):
+    def generate(self, idx, max_length, temperature= 1.0, top_k = 1): # max_length = T
+        
         self.eval()  # Set the model to evaluation mode
         generated = idx  # Start with the input indices
         device = idx.device
@@ -139,7 +141,11 @@ class GPT(nn.Module):
                 # Generate logits for the current sequence
                 logits, _ = self.forward(generated)
                 # Take the logits from the last time step
-                logits = logits[:, -1, :]
+                logits = logits[:, -1, :] / temperature
+                if top_k is not None:
+                    v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                    logits[logits < v[:, [-1]]] = -float('inf')
+                
                 # Convert logits to probabilities
                 probs = F.softmax(logits, dim=-1)
                 # Sample from the probabilities to get the next token
@@ -269,7 +275,7 @@ class DataLoaderLite:
         x = buf.clone().view(B, T)[:, :-1] # inputs
         y = buf.clone().view(B, T)[:, 1:] # targets
         # print(x[0, :])
-        y[:, :-config.lenOfEachPath] = config.maxNodes + 4 # empty
+        y[:, :-config.lenOfEachPath] = -1 # empty
         # advance the position in the tensor
         self.current_position += B * T * self.num_processes
         # if loading the next batch would be out of bounds, advance to next shard
@@ -367,7 +373,7 @@ if __name__ == "__main__":
     torch.set_float32_matmul_precision('high')
 
     # create model
-    model = GPT(GPTConfig(vocab_size=config.maxNodes + 5))
+    model = GPT(GPTConfig(vocab_size=config.maxNodes + 4 ))
 
 
 
@@ -382,6 +388,10 @@ if __name__ == "__main__":
         model = DDP(model, device_ids=[ddp_local_rank])
     raw_model = model.module if ddp else model # always contains the "raw" unwrapped model
 
+    # ctx = nullcontext() if device == 'cpu' else torch.amp.autocast(device_type=device, dtype=ptdtype)
+
+    results = {}
+    
     max_lr = 6e-4
     min_lr = max_lr * 0.1
     warmup_steps = 715
@@ -410,7 +420,8 @@ if __name__ == "__main__":
         pass
 
     # print(device, torch.cuda.memory_allocated(device))
-
+    eval_every = 15
+        
     for step in range(max_steps):
         # print(device, torch.cuda.memory_allocated(device))
         t0 = time.time()
@@ -454,75 +465,6 @@ if __name__ == "__main__":
                     # rng seeds etc., if you wanted to more exactly resume training
                     torch.save(checkpoint, checkpoint_path)
 
-        # once in a while evaluate hellaswag
-        # if (step % 250 == 0 or last_step) and (not use_compile):
-        #     num_correct_norm = 0
-        #     num_total = 0
-        #     for i, example in enumerate(iterate_examples("val")):
-        #         # only process examples where i % ddp_world_size == ddp_rank
-        #         if i % ddp_world_size != ddp_rank:
-        #             continue
-        #         # render the example into tokens and labels
-        #         _, tokens, mask, label = render_example(example)
-        #         tokens = tokens.to(device)
-        #         mask = mask.to(device)
-        #         # get the logits
-        #         with torch.no_grad():
-        #             with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
-        #                 logits, loss = model(tokens)
-        #             pred_norm = get_most_likely_row(tokens, mask, logits)
-        #         num_total += 1
-        #         num_correct_norm += int(pred_norm == label)
-        #     # reduce the stats across all processes
-        #     if ddp:
-        #         num_total = torch.tensor(num_total, dtype=torch.long, device=device)
-        #         num_correct_norm = torch.tensor(num_correct_norm, dtype=torch.long, device=device)
-        #         dist.all_reduce(num_total, op=dist.ReduceOp.SUM)
-        #         dist.all_reduce(num_correct_norm, op=dist.ReduceOp.SUM)
-        #         num_total = num_total.item()
-        #         num_correct_norm = num_correct_norm.item()
-        #     acc_norm = num_correct_norm / num_total
-        #     if master_process:
-        #         print(f"HellaSwag accuracy: {num_correct_norm}/{num_total}={acc_norm:.4f}")
-        #         with open(log_file, "a") as f:
-        #             f.write(f"{step} hella {acc_norm:.4f}\n")
-
-        # once in a while generate from the model (except step 0, which is noise)
-        # if ((step > 0 and step % 250 == 0) or last_step) and (not use_compile):
-        #     model.eval()
-        #     num_return_sequences = 4
-        #     max_length = 32
-        #     tokens = enc.encode("Hello, I'm a language model,")
-        #     tokens = torch.tensor(tokens, dtype=torch.long)
-        #     tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
-        #     xgen = tokens.to(device)
-        #     sample_rng = torch.Generator(device=device)
-        #     sample_rng.manual_seed(42 + ddp_rank)
-        #     while xgen.size(1) < max_length:
-        #         # forward the model to get the logits
-        #         with torch.no_grad():
-        #             with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
-        #                 logits, loss = model(xgen) # (B, T, vocab_size)
-        #             # take the logits at the last position
-        #             logits = logits[:, -1, :] # (B, vocab_size)
-        #             # get the probabilities
-        #             probs = F.softmax(logits, dim=-1)
-        #             # do top-k sampling of 50 (huggingface pipeline default)
-        #             # topk_probs here becomes (5, 50), topk_indices is (5, 50)
-        #             topk_probs, topk_indices = torch.topk(probs, 50, dim=-1)
-        #             # select a token from the top-k probabilities
-        #             # note: multinomial does not demand the input to sum to 1
-        #             ix = torch.multinomial(topk_probs, 1, generator=sample_rng) # (B, 1)
-        #             # gather the corresponding indices
-        #             xcol = torch.gather(topk_indices, -1, ix) # (B, 1)
-        #             # append to the sequence
-        #             xgen = torch.cat((xgen, xcol), dim=1)
-        #     # print the generated text
-        #     for i in range(num_return_sequences):
-        #         tokens = xgen[i, :max_length].tolist()
-        #         decoded = enc.decode(tokens)
-        #         print(f"rank {ddp_rank} sample {i}: {decoded}")
-
         # do one step of the optimization
         model.train()
         optimizer.zero_grad()
@@ -558,6 +500,15 @@ if __name__ == "__main__":
             print(f"step {step:5d} | loss: {loss_accum.item():.6f} | lr {lr:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}")
             with open(log_file, "a") as f:
                 f.write(f"{step} train {loss_accum.item():.6f}\n")
+        if step % eval_every == 0:
+            # Generate sequences and check accuracies
+            # if args.eval_train:
+            #     results = evaluate(model, train_loader, temperature=0.8, top_k=top_k, results=results, mode='train')
+            #     results = evaluate_forced(model, train_loader, results=results, mode='train')
+
+            results = evaluate(model, data_root = "tokenized_data", temperature = 1.0, top_k = 1, results=results, split = "val", max_batches = 100, B = B, device=device)
+            # results = evaluate_forced(model, test_loader, ctx=ctx, results=results, mode='test')
+            print(results)
 
     if ddp:
         destroy_process_group()

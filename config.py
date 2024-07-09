@@ -11,4 +11,6 @@ numOfSamples = 100000
 
 showLoadingBar = True
 
+shard_size = 7*int(1e4)
+
 # numOfPathsFromSource * (lenOfEachPath - 1) * 3 + 3 + lenOfEachPath
