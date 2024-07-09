@@ -9,79 +9,102 @@ For evaluation of the forward backward model, we need:
 
 For comparing the FB model with GPT2, we would compare their 1-step prediction losses where the FB model gets to condition on the goal text, while GPT2 does not.
 """
-from train_fb import Encoder, ForwardEncoderConfig, BackwardEncoderConfig, TextHead, TextHeadConfig,DataLoaderLite
+
 import torch
-from tqdm import tqdm
+from train_gpt2 import GPT, GPTConfig, DataLoaderLite, load_tokens
+import config
 
-def load_fb_model():
-    pass 
+class EvaluationDataLoaderLite:
+    def __init__(self, B, T, process_rank, num_processes):
+        self.B = B
+        self.T = T
+        self.process_rank = process_rank
+        self.num_processes = num_processes
 
-def load_gpt_model():
-    pass
+        # get the shard filenames
+        data_root = "tokenized_data"
+        shards = os.listdir(data_root)
+        shard = [s for s in shards if "val" in s][0]
+        shard = os.path.join(data_root, shard)
+        self.shard = shard
+        if master_process:
+            print(f"found 1 shard for split evaluation")
+        self.reset()
 
-if __name__ == "__main__":
-    device = "cuda"
-    # load the model checkpoint
-    checkpoint = torch.load("/home/t-edwardhu/build-nanogpt/log/2024-07-01-23-43-25/model_00999.pt")
-    f_enc = Encoder(checkpoint['raw_f_enc_config'])
-    b_enc = Encoder(checkpoint['raw_b_enc_config'])
-    text_head = TextHead(TextHeadConfig(n_goal=b_enc.config.n_embd))
-    use_compile = True # torch.compile interferes with HellaSwag eval and Generation. TODO fix
-    if use_compile:
-        f_enc = torch.compile(f_enc)
-        b_enc = torch.compile(b_enc)
-        text_head = torch.compile(text_head)
+    def reset(self):
+        # state, init at shard zero
+        self.current_shard = 0
+        self.tokens = load_tokens(self.shards[self.current_shard])
+        self.current_position = self.B * self.T * self.process_rank
 
-    f_enc.load_state_dict(checkpoint["raw_f_enc"])
-    b_enc.load_state_dict(checkpoint["raw_b_enc"])
-    text_head.load_state_dict(checkpoint["raw_text_head"])
- 
-    models = [f_enc, b_enc, text_head]
-    for m in models:
-        m.to(device)
-        m.eval()
+    def next_batch(self):
+        B, T = self.B, self.T
+        x = torch.empty(size = (B*config.lenOfEachPath, T-1))
+        # print(self.tokens.shape)
+        if self.current_position+(B * config.lenOfEachPath * T * self.num_processes) < len(self.tokens): # wouldn't go over
+            for idx in range(config.lenOfEachPath):
+                buf = self.tokens[self.current_position : self.current_position+B*T]
+                # print(buf.shape)
+                x[idx*B:(idx + 1)*B, :] = buf.clone().view(B, T)[:, :-1] # inputs
+                y[:B, :] = buf.clone().view(B, T)[:, 1:] # targets
+                # print(x[0, :])
+                y[:, :-config.lenOfEachPath] = config.maxNodes + 4 # empty
+                # advance the position in the tensor
+                self.current_position += B * T * self.num_processes
+                # if loading the next batch would be out of bounds, advance to next shard
+                if self.current_position + (B * T * self.num_processes) > len(self.tokens):
+                    self.current_shard = (self.current_shard + 1) % len(self.shards)
+                    self.tokens = load_tokens(self.shards[self.current_shard])
+                    self.current_position = B * T * self.process_rank
+                return x, y
 
-    B = 64
-    T = 1024
-    k =1022 # offset between forward and backward representations.
-    # we should consider evaluating all k <= K rather than just a single K as we do currently. We can use the cartesian product code for this.
-    # TODO: we should modify the code so that for a given trajectory, we first take a goal with length K, and then evaluate the model for all valid starting points in the trajectory, conditioned on the goal.
-    """ 
-    k=0 case
-        --f-><-k-><--b------
-    X =  1  2  3  4  5  6  7
-               y
 
-    k=1 case
-        --f-><---k--><--b------
-    X =  1  2  3  4  5  6  7
-               y      
-    """
-    val_loss_accum = 0
-    val_loader = DataLoaderLite(B=B, T=T, split="val", process_rank=0, num_processes=1)
-    torch.set_float32_matmul_precision('high')
-    # calculate log probability of the generated sequences.
-    with torch.no_grad():
-        val_loss_steps = 5
-        pbar = tqdm(range(val_loss_steps), desc=f"Calculating validation loss.", disable=False)
-        # TODO: go through all the validation data.
-        for _ in range(val_loss_steps):
-            buf = val_loader.next_batch()
-            buf = buf.to(device)
-            x = buf[:-1].view(B, T)
-            with torch.autocast(device_type=device, dtype=torch.bfloat16):
-                                                # Let's say k=2 and the array is (1,2,3,4,5,6)
-                forward = f_enc(x)[:, :-(1+k)]  # [f(1), f(12), f(123)]
-                _backward = b_enc(x)            # [b(6), b(65), b(654), b(6543), b(65432), b(654321)]
-                backward = _backward.flip(1)    # [b(6..1), b(6..2), b(6..3), b(6..4), b(6..5), b(6)]
-                backward = backward[:, (1+k):]  # [b(654), b(65), b(6)]
-                text_labels = x[:,1 : -(k)]     # [2,      3,     4]
-                assert forward.shape[1] == backward.shape[1] == text_labels.shape[1]
-                print(forward.shape, backward.shape, text_labels.shape)
-                logits, loss = text_head(forward, backward, targets=text_labels)
-                
-                loss = loss / (val_loss_steps)
-                val_loss_accum += loss.detach()
-                pbar.update(1)
-        pbar.close()
-    print("Validation loss: ", val_loss_accum.item())
+model = GPT(GPTConfig(vocab_size=config.maxNodes + 5))
+
+checkpoint = torch.load("/home/ada/Documents/dev/star_graphs/star_graph_generator/log/model_00999.pt")
+
+model_state_dict = checkpoint['model']
+
+model.load_state_dict(model_state_dict)
+
+# VAL_PATH = '/home/ada/Documents/dev/star_graphs/star_graph_generator/tokenized_data/tokenized_data_val_000000.npy'
+
+# print(VAL_PATH)
+
+ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
+if ddp:
+    # use of DDP atm demands CUDA, we set the device appropriately according to rank
+    assert torch.cuda.is_available(), "for now i think we need CUDA for DDP"
+    init_process_group(backend='nccl')
+    ddp_rank = int(os.environ['RANK'])
+    ddp_local_rank = int(os.environ['LOCAL_RANK'])
+    ddp_world_size = int(os.environ['WORLD_SIZE'])
+    device = f'cuda:{ddp_local_rank}'
+    torch.cuda.set_device(device)
+    master_process = ddp_rank == 0 # this process will do logging, checkpointing etc.
+else:
+    # vanilla, non-DDP run
+    ddp_rank = 0
+    ddp_local_rank = 0
+    ddp_world_size = 1
+    master_process = True
+    # attempt to autodetect device
+    device = "cpu"
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device = "mps"
+    print(f"using device: {device}")
+
+
+B = 256
+T = config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3 + config.lenOfEachPath # sequence length
+
+val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val")
+
+model.eval()
+
+val_loader.reset()
+
+with torch.no_grad():
+    
