@@ -98,6 +98,82 @@ def evaluate(model, data_root = "tokenized_data", temperature = 1.0, top_k = 1, 
         model.train()
         return results
     
+    
+# generate(self, forward_embedding, backward_embedding, idx, goal, max_length, temperature=1.0, top_k = 1)
+# Function to evaluate performance when generating
+@torch.no_grad()
+def evaluate2(text_head, forward_embedding, backward_embedding, data_root = "tokenized_data", temperature = 1.0, top_k = 1, results=None, split = "val", max_batches = 10, B = 256, device="cpu"):
+    """
+    Generates sequences (without teacher-forcing) and calculates accuracies
+    """
+    # loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=True)
+    with torch.no_grad():
+        assert split in {'val', 'train'}
+
+        num_prefix_tokens = config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3
+        num_target_tokens = config.lenOfEachPath
+
+        text_head.eval()
+        forward_embedding.eval()
+        backward_embedding.eval()
+        total_acc = AverageMeter()
+        tokens_corr = {i: AverageMeter() for i in range(num_target_tokens)}
+        
+        tokenizer = Tokenizer(config.numOfPathsFromSource, config.lenOfEachPath, config.maxNodes)
+        
+        T = num_prefix_tokens + num_target_tokens
+
+        shards = os.listdir(data_root)
+        shards = [s for s in shards if split in s]
+        shards = sorted(shards)
+        shards = [os.path.join(data_root, s) for s in shards]
+        
+        batch_idx = 0
+        current_shard = 0
+        current_token = 0
+        
+        tokens = load_tokens(shards[current_shard])
+        tokens = tokens.to(device)
+        # print(device)
+        # print(tokens.device)
+        # print(model.device)
+        while batch_idx<max_batches:
+            if current_token + B*T <= config.shard_size:
+                batch_tokens = tokens[current_token : current_token + B*T].clone().view(B, T)
+                x = batch_tokens.clone()[:, :-num_target_tokens]
+                goal = batch_tokens.clone()[:, -1:]
+                y = batch_tokens.clone()[:, -num_target_tokens:]
+                # x.to(device)
+                # y.to(device)
+                # print(x.device, y.device)
+                # generate(self, forward_embedding, backward_embedding, idx, goal, max_length, temperature=1.0, top_k = 1)
+                y_pred = text_head.generate(forward_embedding, backward_embedding, x, goal, T, temperature, top_k)
+                # print(y_pred)
+                correct = y.eq(y_pred[:, -num_target_tokens:]).float()
+                # print(correct)
+                completely_correct = torch.mean(correct.sum(dim=1).eq(num_target_tokens).to(torch.float))
+                # print(completely_correct)
+                total_acc.update(completely_correct.item(), x.shape[0])
+
+                # Individual token accuracy
+                per_token_acc = correct.mean(dim=0)
+                for i in range(num_target_tokens):
+                    tokens_corr[i].update(per_token_acc[i].item(), x.shape[0])
+                
+                # print(f'{split} accuracy: {total_acc.get(percentage=True):.2f}')
+            else:
+                current_shard = (current_shard + 1) % len(shards)
+                current_token = 0
+            batch_idx += 1
+        
+        if results is not None:
+            results[split + '/accuracy'] = total_acc.get(percentage=True)
+            for i in range(num_target_tokens):
+                results[split + '/token_' + str(i + 1)] = tokens_corr[i].get(percentage=True)
+        # model.train()
+        return results
+
+
     # for x in bar:
     #     y = x[:, num_prefix_tokens:].clone()
     #     x = x[:, :num_prefix_tokens].clone()
