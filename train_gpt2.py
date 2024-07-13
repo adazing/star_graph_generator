@@ -395,7 +395,8 @@ if __name__ == "__main__":
     max_lr = 6e-4
     min_lr = max_lr * 0.1
     warmup_steps = 715
-    max_steps = 1000 # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
+    epochs = 10
+    max_steps = epochs * config.numOfSamples//B # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
     def get_lr(it):
         # 1) linear warmup for warmup_iters steps
         if it < warmup_steps:
@@ -420,7 +421,7 @@ if __name__ == "__main__":
         pass
 
     # print(device, torch.cuda.memory_allocated(device))
-    eval_every = 15
+    eval_every = 100
         
     for step in range(max_steps):
         # print(device, torch.cuda.memory_allocated(device))
@@ -439,6 +440,8 @@ if __name__ == "__main__":
                     # print("blah2", device, torch.cuda.memory_allocated(device))
                     x, y = val_loader.next_batch()
                     x, y = x.to(device), y.to(device)
+                    # print(x[0])
+                    # print(y[0])
                     # print("blah3", device, torch.cuda.memory_allocated(device))
                     with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
                         # print("blah3", device, torch.cuda.memory_allocated(device))

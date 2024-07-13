@@ -7,10 +7,10 @@ maxNodes = 50
 
 reverse = False
 
-numOfSamples = 100000
+numOfSamples = 232558
 
 showLoadingBar = True
 
-shard_size = 7*int(1e4)
+shard_size = (numOfPathsFromSource * (lenOfEachPath - 1) * 3 + 3 + lenOfEachPath)*int(1e4)
 
 # numOfPathsFromSource * (lenOfEachPath - 1) * 3 + 3 + lenOfEachPath

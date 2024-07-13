@@ -12,7 +12,7 @@ from tqdm import tqdm # pip install tqdm
 from tokenizer import Tokenizer
 import config
 
-T = config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3 + config.lenOfEachPath # sequence length
+# T = config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3 + config.lenOfEachPath # sequence length
 
 
 local_dir = "tokenized_data"
@@ -78,7 +78,7 @@ if __name__ == "__main__":
         progress_bar = None
         for tokens in pool.imap(tokenize, data, chunksize=16):
             # is there enough space in the current shard for the new tokens?
-            if token_count + len(tokens) < shard_size:
+            if token_count + len(tokens) <= shard_size:
                 # simply append tokens to current shard
                 all_tokens_np[token_count:token_count+len(tokens)] = tokens
                 token_count += len(tokens)
@@ -92,6 +92,8 @@ if __name__ == "__main__":
                 filename = os.path.join(DATA_CACHE_DIR, f"tokenized_data_{split}_{shard_index:06d}")
                 # split the document into whatever fits in this shard; the remainder goes to next one
                 remainder = shard_size - token_count
+                if remainder != 0:
+                    print("oops", remainder)
                 progress_bar.update(remainder)
                 all_tokens_np[token_count:token_count+remainder] = tokens[:remainder]
                 # print(all_tokens_np)
