@@ -838,7 +838,8 @@ if __name__ == "__main__":
                     # print(loss_before_mean)
                     # print(_dt)
                     # print(_fb_pairs)
-                    print("k = 2 loss:", loss_before_mean[_dt.view(-1)==2].mean().item())
+                    print("k = 2 loss:", loss_before_mean.mean().item())
+                    # print("k = 2 loss:", loss_before_mean[_dt.view(-1)==2].mean().item())
                     # print("k = rand loss:", loss_before_mean[_dt.view(-1)!=2].mean().item())
                     
                     # conditional VAE stuff here.
