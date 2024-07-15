@@ -1,7 +1,7 @@
 
 numOfPathsFromSource = 4
 
-lenOfEachPath = 4
+lenOfEachPath = 7
 
 maxNodes = 50
 

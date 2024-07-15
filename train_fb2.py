@@ -396,9 +396,11 @@ class TextHead(nn.Module):
 import random
 def create_cartesian_product_examples(T):
     # precompute timestep pairs (t, t+k) for the forward and backward encoders
-    ft = torch.arange(T, dtype=torch.int32).cuda() # [0, 1 .... T-1]
-    k_rand = random.randint(3, 20) # or sample from a logarithimic 
-    dt = torch.Tensor([2, k_rand]).type(torch.int32).to(device_type)
+    ft = torch.arange(T, dtype=torch.int32).to(device_type) # [0, 1 .... T-1]
+    # k_rand = random.randint(3, T-2) # or sample from a logarithimic
+    # dt = torch.Tensor([2, k_rand]).type(torch.int32).to(device_type)
+    k_rand = 2
+    dt = torch.Tensor([k_rand]).type(torch.int32).to(device_type)
     combinations = torch.cartesian_prod(ft, dt)
 
     combinations[:, 1] = combinations[:, 0] + combinations[:, 1]
@@ -534,9 +536,9 @@ if __name__ == "__main__":
     from fsq import FSQ
     # from stochastic_predictor import StochasticPredictor
     # create model
-    f_enc = Encoder(ForwardEncoderConfig(n_layer=6, block_size=T, n_head=8,vocab_size=1000))
-    b_enc = Encoder(BackwardEncoderConfig(n_layer=6, block_size=T, n_head=8, vocab_size=1000))
-    text_head = TextHead(TextHeadConfig(n_goal=b_enc.config.n_embd, vocab_size=1000))
+    f_enc = Encoder(ForwardEncoderConfig(n_layer=6, block_size=T, n_head=8,vocab_size=config.maxNodes + 4))
+    b_enc = Encoder(BackwardEncoderConfig(n_layer=6, block_size=T, n_head=8, vocab_size=config.maxNodes + 4))
+    text_head = TextHead(TextHeadConfig(n_goal=b_enc.config.n_embd, vocab_size=config.maxNodes + 4))
 
     # sp = StochasticPredictor(768 * 2 + 256, 768).cuda()
 
@@ -804,7 +806,8 @@ if __name__ == "__main__":
             midpoints += graph_description_length
             # usually set this to some number lower than len(fb_pairs)
             subset_size = len(fb_pairs)
-            minibatch_size = 2**13 + 2**11 + 2**10
+            # minibatch_size = 2**13 + 2**11 + 2**10
+            minibatch_size = 2  # TODO
             subsample_ratio = subset_size / len(fb_pairs)
             # print("subset size", subset_size, "subsample ratio", subsample_ratio)
             num_minibatches = -(-subset_size // minibatch_size)
@@ -815,7 +818,7 @@ if __name__ == "__main__":
             _backward = backward.flip(1) # [b(54321), b(5432), b(543), b(54), b(5)]
 
             # subsample the pairs, since we can't fit all of them in memory
-            subsampled_idxs = torch.randint(high=len(fb_pairs), size=(subset_size,))
+            subsampled_idxs = torch.randint(high=len(fb_pairs), size=(subset_size,))  # TODO, number maybe repeated
             _fb_pairs = fb_pairs[subsampled_idxs]
             _labels = labels[subsampled_idxs]
             _dt = dt[subsampled_idxs]
@@ -836,7 +839,7 @@ if __name__ == "__main__":
                     # print(_dt)
                     # print(_fb_pairs)
                     print("k = 2 loss:", loss_before_mean[_dt.view(-1)==2].mean().item())
-                    print("k = rand loss:", loss_before_mean[_dt.view(-1)!=2].mean().item())
+                    # print("k = rand loss:", loss_before_mean[_dt.view(-1)!=2].mean().item())
                     
                     # conditional VAE stuff here.
                     # import ipdb; ipdb.set_trace()
@@ -849,37 +852,37 @@ if __name__ == "__main__":
                     
                     
                     # decode some examples to text space for visualization.
-                    if False:
-                    # if step % 100 == 0 and i == 0:
-                        print(f"Step {step}: Train inputs, predictions, and labels")
-                        for i in range(4):
-                            vforward_tokens = tokens[0, :_fb_pairs[i, 0] + 1]
-                            vbackward_tokens = tokens[0, _fb_pairs[i, 1]:]
-                            vlabels = x[0, _labels[i]]
-                            vlogits = logits[0, i]
-
-                            # top k sampling
-                            # get the probabilities
-                            probs = F.softmax(vlogits, dim=-1)
-                            # do top-k sampling of 50 (huggingface pipeline default)
-                            # topk_probs here becomes (5, 50), topk_indices is (5, 50)
-                            topk_probs, topk_indices = torch.topk(probs, 50, dim=-1)
-                            # select a token from the top-k probabilities
-                            # note: multinomial does not demand the input to sum to 1
-                            ix = torch.multinomial(topk_probs, 1, generator=sample_rng) # (B, 1)
-                            # gather the corresponding indices
-                            xcol = torch.gather(topk_indices, -1, ix) # (B, 1)
-                            # append to the sequence
-                            
-                            
-                            print("FORWARD:", tokenizer.decode(vforward_tokens, skip_special_tokens=True,clean_up_tokenization_spaces=True))
-                            print("\n")
-                            print("label:", tokenizer.decode(vlabels))
-                            print("pred:", tokenizer.decode(xcol))
-                            print("\n")
-                            print("BACKWARD:", tokenizer.decode(vbackward_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=True))
-                           
-                            print("-" * 80)
+                    # if False:
+                    # # if step % 100 == 0 and i == 0:
+                    #     print(f"Step {step}: Train inputs, predictions, and labels")
+                    #     for i in range(4):
+                    #         vforward_tokens = tokens[0, :_fb_pairs[i, 0] + 1]
+                    #         vbackward_tokens = tokens[0, _fb_pairs[i, 1]:]
+                    #         vlabels = x[0, _labels[i]]
+                    #         vlogits = logits[0, i]
+                    #
+                    #         # top k sampling
+                    #         # get the probabilities
+                    #         probs = F.softmax(vlogits, dim=-1)
+                    #         # do top-k sampling of 50 (huggingface pipeline default)
+                    #         # topk_probs here becomes (5, 50), topk_indices is (5, 50)
+                    #         topk_probs, topk_indices = torch.topk(probs, 50, dim=-1)
+                    #         # select a token from the top-k probabilities
+                    #         # note: multinomial does not demand the input to sum to 1
+                    #         ix = torch.multinomial(topk_probs, 1, generator=sample_rng) # (B, 1)
+                    #         # gather the corresponding indices
+                    #         xcol = torch.gather(topk_indices, -1, ix) # (B, 1)
+                    #         # append to the sequence
+                    #
+                    #
+                    #         print("FORWARD:", tokenizer.decode(vforward_tokens, skip_special_tokens=True,clean_up_tokenization_spaces=True))
+                    #         print("\n")
+                    #         print("label:", tokenizer.decode(vlabels))
+                    #         print("pred:", tokenizer.decode(xcol))
+                    #         print("\n")
+                    #         print("BACKWARD:", tokenizer.decode(vbackward_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=True))
+                    #
+                    #         print("-" * 80)
                             
                 # we have to scale the loss to account for gradient accumulation,
                 # because the gradients just add on each successive backward().
