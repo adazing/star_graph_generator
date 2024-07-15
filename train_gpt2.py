@@ -396,7 +396,8 @@ if __name__ == "__main__":
     min_lr = max_lr * 0.1
     warmup_steps = 715
     epochs = 10
-    max_steps = epochs * config.numOfSamples//B # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
+                #         number of batches total  =  validation data token size /  batch_size * length of each line
+    max_steps = epochs * (config.numOfSamples//B - (config.shard_size // (B * (config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3 + config.lenOfEachPath)))) # 1000 steps is ~1 epoch, if data is 500M tokens and batch size is 0.5M tokens
     def get_lr(it):
         # 1) linear warmup for warmup_iters steps
         if it < warmup_steps:

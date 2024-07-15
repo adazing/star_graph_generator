@@ -171,7 +171,7 @@ def evaluate2(text_head, forward_embedding, backward_embedding, data_root = "tok
         for i in range(num_target_tokens):
             results[split + '/token_' + str(i + 1)] = tokens_corr[i].get(percentage=True)
         # model.train()
-    print(results)
+    # print(results)
     return results
 
 

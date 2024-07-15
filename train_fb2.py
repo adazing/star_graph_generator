@@ -580,10 +580,14 @@ if __name__ == "__main__":
     #     return min_lr + coeff * (max_lr - min_lr)
 
     # Learning hyperparameters for tinystories
-    max_steps = 10000 # 1000 steps is ~1 epoch, if data is 500M tokens and batch size is 0.5M tokens
+    epochs = 10
+                #         number of batches total  =  validation data token size /  batch_size * length of each line
+    max_steps = epochs * (config.numOfSamples//B - (config.shard_size // (B * (config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3 + config.lenOfEachPath)))) # 1000 steps is ~1 epoch, if data is 500M tokens and batch size is 0.5M tokens
     def get_lr(it):
         return 3e-4
 
+    eval_every = 250
+    
     # optimize!
     def configure_optimizers(models, weight_decay, learning_rate, device_type):
         # start with all of the candidate parameters (that require grad)
@@ -788,6 +792,7 @@ if __name__ == "__main__":
             # text = next(inf_dataloader)['text']
             x = train_loader.next_batch()
             x = x.to(device)
+            # print(x)
             # TODO: look into why EOS tokens (id 1) are missing
             # tokens = tokenizer(text, return_tensors="pt", max_length=T, padding='max_length', truncation=True)['input_ids']
             # x = torch.as_tensor(tokens, device=device_type)
@@ -827,6 +832,9 @@ if __name__ == "__main__":
                     # print(logits, loss, loss_info)
                     # print(_dt.shape)
                     # print(_dt)
+                    # print(loss_before_mean)
+                    # print(_dt)
+                    # print(_fb_pairs)
                     print("k = 2 loss:", loss_before_mean[_dt.view(-1)==2].mean().item())
                     print("k = rand loss:", loss_before_mean[_dt.view(-1)!=2].mean().item())
                     
@@ -919,9 +927,9 @@ if __name__ == "__main__":
             print(f"step {step:5d} | loss: {loss_accum.item():.6f} | lr {lr:.4e} | norm: {total_norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}")
             with open(log_file, "a") as f:
                 f.write(f"{step} train {loss_accum.item():.6f}\n")
-        if step %15 == 0 and step!=0:
+        if step %eval_every == 0 and step!=0:
             
-            results = evaluate2(text_head, Encoder(ForwardEncoderConfig(n_layer=6, block_size=T, n_head=8,vocab_size=1000)), Encoder(BackwardEncoderConfig(n_layer=6, block_size=T, n_head=8,vocab_size=1000)), data_root = "tokenized_data", temperature = 1.0, top_k = 1, results=None, split = "val", max_batches = 100, B = 256, device=device)
+            results = evaluate2(text_head, f_enc, b_enc, data_root = "tokenized_data", temperature = 1.0, top_k = 1, results=None, split = "val", max_batches = 100, B = 256, device=device)
             print(results)
             # generate(self, forward, backward_embedding, idx, goal, max_length, temperature=1.0, top_k = 1)
     
