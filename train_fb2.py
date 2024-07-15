@@ -850,7 +850,7 @@ if __name__ == "__main__":
                         # get k and embedding layer.
                         pass
 
-                    lip_loss = loss_latent_inpaint(_f, _b, _backward[:, midpoints], _dt)
+                    # lip_loss = loss_latent_inpaint(_f, _b, _backward[:, midpoints], _dt)
                     
                     
                     # decode some examples to text space for visualization.
