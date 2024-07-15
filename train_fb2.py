@@ -831,7 +831,7 @@ if __name__ == "__main__":
                     text_labels = x[:, _labels[i:i+minibatch_size]]
                     logits, loss, loss_info = text_head(_f, _b, targets=text_labels, return_info=True)
                     loss_before_mean = loss_info['loss_before_mean']
-                    _dt = _dt[None].repeat(B, 1)
+                    # _dt = _dt[None].repeat(B, 1)
                     # print(logits, loss, loss_info)
                     # print(_dt.shape)
                     # print(_dt)
