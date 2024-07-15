@@ -588,7 +588,7 @@ if __name__ == "__main__":
     def get_lr(it):
         return 3e-4
 
-    eval_every = 250
+    eval_every = 100
     
     # optimize!
     def configure_optimizers(models, weight_decay, learning_rate, device_type):
@@ -807,7 +807,7 @@ if __name__ == "__main__":
             # usually set this to some number lower than len(fb_pairs)
             subset_size = len(fb_pairs)
             # minibatch_size = 2**13 + 2**11 + 2**10
-            minibatch_size = 2  # TODO
+            minibatch_size = len(_fb_pairs)  # TODO
             subsample_ratio = subset_size / len(fb_pairs)
             # print("subset size", subset_size, "subsample ratio", subsample_ratio)
             num_minibatches = -(-subset_size // minibatch_size)
