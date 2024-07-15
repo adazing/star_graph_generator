@@ -204,12 +204,17 @@ class TextHead(nn.Module):
             return logits, loss, info
         else:
             return logits, loss
-    def generate(self, forward_embedding, backward_embedding, idx, goal, max_length, temperature=1.0, top_k = 1):
-        forward_embedding.eval()
-        backward_embedding.eval()
+    def generate(self, f_enc, b_enc, idx, goal, max_length, temperature=1.0, top_k = 1):
+        # f_enc = forward_embedding(x)
+        # b_enc = backward_embedding(x)
+        f_enc.eval()
+        b_enc.eval()
         self.eval()
-        
+        device = "cuda"
+        f_enc.to(device)
+        b_enc.to(device)
         generated = idx  # Start with the input indices
+        generated = generated.to(device)
         # device = idx.device
         # graph_description_length = config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3
         # fb_pairs, labels, dt, midpoints = create_cartesian_product_examples(T-graph_description_length)
@@ -238,35 +243,37 @@ class TextHead(nn.Module):
         while generated.size(1) < max_length:
             # Get the last token in the current sequence to use as input
             with torch.no_grad():
-                with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+                with torch.autocast(device_type=device, dtype=torch.bfloat16):
                     forward = f_enc(generated)[:, -1:, :] # gets f(123)
+                    # print(forward.shape)
                     backward = b_enc(goal)[:, -1:, :] # gets b(987) from [b(9), b(98), b(987)]
+                    # print(backward.shape)
                     logits, _ = text_head(forward, backward)
-                # Generate logits for the current sequence
-                logits, _ = self.forward(forward, backward)
-                # Take the logits from the last time step
-                logits = logits[:, -1, :] / temperature
-                if top_k is not None:
-                    v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                    logits[logits < v[:, [-1]]] = -float('inf')
-               
-                # Convert logits to probabilities
-                probs = F.softmax(logits, dim=-1)
-                # Sample from the probabilities to get the next token
-                next_token = torch.multinomial(probs, num_samples=1)
-                # Append the new token to the sequence
-                generated = torch.cat((generated, next_token), dim=1)
+                    # Generate logits for the current sequence
+                    logits, _ = self.forward(forward, backward)
+                    # Take the logits from the last time step
+                    logits = logits[:, -1, :] / temperature
+                    if top_k is not None:
+                        v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                        logits[logits < v[:, [-1]]] = -float('inf')
+                
+                    # Convert logits to probabilities
+                    probs = F.softmax(logits, dim=-1)
+                    # Sample from the probabilities to get the next token
+                    next_token = torch.multinomial(probs, num_samples=1)
+                    # Append the new token to the sequence
+                    # print(generated.shape)
+                    # print(next_token.shape)
+                    generated = torch.cat((generated, next_token), dim=1)
 
-            for i in range(0, len(_fb_pairs), minibatch_size):
-                with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
-                    _f = forward[:, _fb_pairs[i:i+minibatch_size, 0]]
-                    _b = _backward[:, _fb_pairs[i:i+minibatch_size, 1]]
-                    text_labels = x[:, _labels[i:i+minibatch_size]]
-                    logits, loss, loss_info = text_head(_f, _b, targets=text_labels, return_info=True)
+                    # _f = forward[:, _fb_pairs[i:i+minibatch_size, 0]]
+                    # _b = _backward[:, _fb_pairs[i:i+minibatch_size, 1]]
+                    # text_labels = x[:, _labels[i:i+minibatch_size]]
+                    # logits, loss, loss_info = text_head(_f, _b, targets=text_labels, return_info=True)
 
 
-        forward_embedding.train()
-        backward_embedding.train()
+        f_enc.train()
+        b_enc.train()
         self.train()
         return generated
 
@@ -914,7 +921,8 @@ if __name__ == "__main__":
                 f.write(f"{step} train {loss_accum.item():.6f}\n")
         if step %15 == 0 and step!=0:
             
-            results = evaluate2(text_head, Encoder(ForwardEncoderConfig(n_layer=6, block_size=T, n_head=8,vocab_size=1000)), Encoder(BackwardEncoderConfig(n_layer=6, block_size=T, n_head=8,vocab_size=1000)), data_root = "tokenized_data", temperature = 1.0, top_k = 1, results=None, split = "val", max_batches = 10, B = 256, device=device)
+            results = evaluate2(text_head, Encoder(ForwardEncoderConfig(n_layer=6, block_size=T, n_head=8,vocab_size=1000)), Encoder(BackwardEncoderConfig(n_layer=6, block_size=T, n_head=8,vocab_size=1000)), data_root = "tokenized_data", temperature = 1.0, top_k = 1, results=None, split = "val", max_batches = 100, B = 256, device=device)
+            print(results)
             # generate(self, forward, backward_embedding, idx, goal, max_length, temperature=1.0, top_k = 1)
     
     if ddp:

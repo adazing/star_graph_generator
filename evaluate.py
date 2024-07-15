@@ -109,7 +109,7 @@ def evaluate2(text_head, forward_embedding, backward_embedding, data_root = "tok
     # loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=True)
     with torch.no_grad():
         assert split in {'val', 'train'}
-
+        results = {}
         num_prefix_tokens = config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3
         num_target_tokens = config.lenOfEachPath
 
@@ -166,12 +166,13 @@ def evaluate2(text_head, forward_embedding, backward_embedding, data_root = "tok
                 current_token = 0
             batch_idx += 1
         
-        if results is not None:
-            results[split + '/accuracy'] = total_acc.get(percentage=True)
-            for i in range(num_target_tokens):
-                results[split + '/token_' + str(i + 1)] = tokens_corr[i].get(percentage=True)
+        # if results is not None:
+        results[split + '/accuracy'] = total_acc.get(percentage=True)
+        for i in range(num_target_tokens):
+            results[split + '/token_' + str(i + 1)] = tokens_corr[i].get(percentage=True)
         # model.train()
-        return results
+    print(results)
+    return results
 
 
     # for x in bar:
