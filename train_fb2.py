@@ -396,15 +396,14 @@ class TextHead(nn.Module):
 import random
 def create_cartesian_product_examples(T):
     # precompute timestep pairs (t, t+k) for the forward and backward encoders
-    ft = torch.arange(T, dtype=torch.int32).to(device_type) # [0, 1 .... T-1]
-    # k_rand = random.randint(3, T-2) # or sample from a logarithimic
-    # dt = torch.Tensor([2, k_rand]).type(torch.int32).to(device_type)
-    k_rand = 2
-    dt = torch.Tensor([k_rand]).type(torch.int32).to(device_type)
-    combinations = torch.cartesian_prod(ft, dt)
+    ft = torch.arange(T, dtype=torch.int32).cuda() # [0, 1 .... T-1] [0, 1, 2, 3]
+    k_rand = random.randint(2, T-1) # or sample from a logarithimic k=3
+    # dt = torch.arange(2, T-1, dtype=torch.int32).cuda()
+    dt = torch.Tensor([2]).type(torch.int32).to(device_type) 
+    combinations = torch.cartesian_prod(ft, dt) # [0, 2], [1, 2], [2, 2], [3, 2], [0, k], [1, k], [2, k], [3, k]
 
-    combinations[:, 1] = combinations[:, 0] + combinations[:, 1]
-    midpoints = combinations[:, 0] + (combinations[:, 1] - combinations[:, 0]) // 2
+    combinations[:, 1] = combinations[:, 0] + combinations[:, 1] # [0, 2], [1, 3], [2, 4], [3, 5], [0, k], [1, k+1], [2, k+2], [3, k+3]
+    midpoints = combinations[:, 0] + (combinations[:, 1] - combinations[:, 0]) // 2 # midpoints? wouldnt it be simpler to just do (combinations[:, 1] + combinations[:, 0]) // 2
     
     # bt = combinations[:, 0] + combinations[:, 1]
     fb_pairs = combinations.clone()
@@ -832,15 +831,15 @@ if __name__ == "__main__":
                     logits, loss, loss_info = text_head(_f, _b, targets=text_labels, return_info=True)
                     loss_before_mean = loss_info['loss_before_mean']
                     _dt = _dt[None].repeat(B, 1)
+                    print(_dt.shape)
                     # print(logits, loss, loss_info)
                     # print(_dt.shape)
                     # print(_dt)
                     # print(loss_before_mean)
                     # print(_dt)
                     # print(_fb_pairs)
+                    
                     print("k = 2 loss:", loss_before_mean.mean().item())
-
-                    # print("k = 2 loss:", loss_before_mean[_dt.view(-1)==2].mean().item())
                     # print("k = rand loss:", loss_before_mean[_dt.view(-1)!=2].mean().item())
                     
                     # conditional VAE stuff here.
