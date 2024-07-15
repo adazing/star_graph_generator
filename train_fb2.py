@@ -14,7 +14,7 @@ from datasets import load_dataset
 import tiktoken
 import config
 import numpy as np
-
+from evaluate import evaluate2
 """
 We need to define the following models:
 z[t] = enc_F(x[1:t])                    | Forward encoder
@@ -203,8 +203,161 @@ class TextHead(nn.Module):
         if return_info:
             return logits, loss, info
         else:
-            return logits, loss 
+            return logits, loss
+    def generate(self, forward_embedding, backward_embedding, idx, goal, max_length, temperature=1.0, top_k = 1):
+        forward_embedding.eval()
+        backward_embedding.eval()
+        self.eval()
+        
+        generated = idx  # Start with the input indices
+        # device = idx.device
+        # graph_description_length = config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3
+        # fb_pairs, labels, dt, midpoints = create_cartesian_product_examples(T-graph_description_length)
+        # fb_pairs += graph_description_length
+        # labels += graph_description_length
+        # midpoints += graph_description_length
 
+        # subset_size = len(fb_pairs)
+        # minibatch_size = 2**13 + 2**11 + 2**10
+        # subsample_ratio = subset_size / len(fb_pairs)
+        
+        # num_minibatches = -(-subset_size // minibatch_size)
+
+        # with torch.no_grad():
+        #     forward = f_enc(x) # [f(1), f(12), f(123), f(1234), f(12345)]
+        #     backward = b_enc(x) # [b(5), b(54), b(543), b(5432), b(54321)]
+        #     _backward = backward.flip(1) # [b(54321), b(5432), b(543), b(54), b(5)]
+
+        # subsampled_idxs = torch.randint(high=len(fb_pairs), size=(subset_size,))
+        # _fb_pairs = fb_pairs[subsampled_idxs]
+        # _labels = labels[subsampled_idxs]
+        # _dt = dt[subsampled_idxs]
+        # _midpoints = midpoints[subsampled_idxs]
+        
+
+        while generated.size(1) < max_length:
+            # Get the last token in the current sequence to use as input
+            with torch.no_grad():
+                with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+                    forward = f_enc(generated)[:, -1:, :] # gets f(123)
+                    backward = b_enc(goal)[:, -1:, :] # gets b(987) from [b(9), b(98), b(987)]
+                    logits, _ = text_head(forward, backward)
+                # Generate logits for the current sequence
+                logits, _ = self.forward(forward, backward)
+                # Take the logits from the last time step
+                logits = logits[:, -1, :] / temperature
+                if top_k is not None:
+                    v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                    logits[logits < v[:, [-1]]] = -float('inf')
+               
+                # Convert logits to probabilities
+                probs = F.softmax(logits, dim=-1)
+                # Sample from the probabilities to get the next token
+                next_token = torch.multinomial(probs, num_samples=1)
+                # Append the new token to the sequence
+                generated = torch.cat((generated, next_token), dim=1)
+
+            for i in range(0, len(_fb_pairs), minibatch_size):
+                with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+                    _f = forward[:, _fb_pairs[i:i+minibatch_size, 0]]
+                    _b = _backward[:, _fb_pairs[i:i+minibatch_size, 1]]
+                    text_labels = x[:, _labels[i:i+minibatch_size]]
+                    logits, loss, loss_info = text_head(_f, _b, targets=text_labels, return_info=True)
+
+
+        forward_embedding.train()
+        backward_embedding.train()
+        self.train()
+        return generated
+
+#################################################################
+            # x = train_loader.next_batch()
+            # x = x.to(device)
+            # # TODO: look into why EOS tokens (id 1) are missing
+            # # tokens = tokenizer(text, return_tensors="pt", max_length=T, padding='max_length', truncation=True)['input_ids']
+            # # x = torch.as_tensor(tokens, device=device_type)
+            # graph_description_length = config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3
+            # fb_pairs, labels, dt, midpoints = create_cartesian_product_examples(T-graph_description_length)
+            # # print(fb_pairs, labels, dt, midpoints)
+            # fb_pairs += graph_description_length
+            # labels += graph_description_length
+            # midpoints += graph_description_length
+            # # usually set this to some number lower than len(fb_pairs)
+            # subset_size = len(fb_pairs)
+            # minibatch_size = 2**13 + 2**11 + 2**10
+            # subsample_ratio = subset_size / len(fb_pairs)
+            # # print("subset size", subset_size, "subsample ratio", subsample_ratio)
+            # num_minibatches = -(-subset_size // minibatch_size)
+            # # print("minibatch size", minibatch_size, "num_minibatches:", num_minibatches)
+            
+            # forward = f_enc(x) # [f(1), f(12), f(123), f(1234), f(12345)]
+            # backward = b_enc(x) # [b(5), b(54), b(543), b(5432), b(54321)]
+            # _backward = backward.flip(1) # [b(54321), b(5432), b(543), b(54), b(5)]
+
+            # # subsample the pairs, since we can't fit all of them in memory
+            # subsampled_idxs = torch.randint(high=len(fb_pairs), size=(subset_size,))
+            # _fb_pairs = fb_pairs[subsampled_idxs]
+            # _labels = labels[subsampled_idxs]
+            # _dt = dt[subsampled_idxs]
+            # _midpoints = midpoints[subsampled_idxs]
+
+            # for i in range(0, len(_fb_pairs), minibatch_size):
+            #     with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+            #         _f = forward[:, _fb_pairs[i:i+minibatch_size, 0]]
+            #         _b = _backward[:, _fb_pairs[i:i+minibatch_size, 1]]
+            #         text_labels = x[:, _labels[i:i+minibatch_size]]
+            #         logits, loss, loss_info = text_head(_f, _b, targets=text_labels, return_info=True)
+            #         loss_before_mean = loss_info['loss_before_mean']
+            #         _dt = _dt[None].repeat(B, 1)
+            #         # print(logits, loss, loss_info)
+            #         # print(_dt.shape)
+            #         # print(_dt)
+            #         print("k = 2 loss:", loss_before_mean[_dt.view(-1)==2].mean().item())
+            #         print("k = rand loss:", loss_before_mean[_dt.view(-1)!=2].mean().item())
+                    
+            #         # conditional VAE stuff here.
+            #         # import ipdb; ipdb.set_trace()
+            #         def loss_latent_inpaint(starts, goals, targets, deltas):
+            #             # get _b_mid
+            #             # get k and embedding layer.
+            #             pass
+
+            #         lip_loss = loss_latent_inpaint(_f, _b, _backward[:, midpoints], _dt)
+                    
+                    
+            #         # decode some examples to text space for visualization.
+            #         if False:
+            #         # if step % 100 == 0 and i == 0:
+            #             print(f"Step {step}: Train inputs, predictions, and labels")
+            #             for i in range(4):
+            #                 vforward_tokens = tokens[0, :_fb_pairs[i, 0] + 1]
+            #                 vbackward_tokens = tokens[0, _fb_pairs[i, 1]:]
+            #                 vlabels = x[0, _labels[i]]
+            #                 vlogits = logits[0, i]
+
+            #                 # top k sampling
+            #                 # get the probabilities
+            #                 probs = F.softmax(vlogits, dim=-1)
+            #                 # do top-k sampling of 50 (huggingface pipeline default)
+            #                 # topk_probs here becomes (5, 50), topk_indices is (5, 50)
+            #                 topk_probs, topk_indices = torch.topk(probs, 50, dim=-1)
+            #                 # select a token from the top-k probabilities
+            #                 # note: multinomial does not demand the input to sum to 1
+            #                 ix = torch.multinomial(topk_probs, 1, generator=sample_rng) # (B, 1)
+            #                 # gather the corresponding indices
+            #                 xcol = torch.gather(topk_indices, -1, ix) # (B, 1)
+            #                 # append to the sequence
+                            
+                            
+            #                 print("FORWARD:", tokenizer.decode(vforward_tokens, skip_special_tokens=True,clean_up_tokenization_spaces=True))
+            #                 print("\n")
+            #                 print("label:", tokenizer.decode(vlabels))
+            #                 print("pred:", tokenizer.decode(xcol))
+            #                 print("\n")
+            #                 print("BACKWARD:", tokenizer.decode(vbackward_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=True))
+                           
+            #                 print("-" * 80)
+                            
 
 # Original cartesian product functoin
 # def create_cartesian_product_examples(T):
@@ -297,11 +450,10 @@ class DataLoaderLite:
         B, T = self.B, self.T
         # print(self.tokens.shape)
         buf = self.tokens[self.current_position : self.current_position+B*T]
-        # print(buf.shape)
-        x = buf.clone().view(B, T)[:, :-1] # inputs
-        y = buf.clone().view(B, T)[:, 1:] # targets
-        # print(x[0, :])
-        y[:, :-config.lenOfEachPath] = -1 # empty
+        x = buf.clone().view(B, T)
+        # x = buf.clone().view(B, T)[:, :-1] # inputs
+        # y = buf.clone().view(B, T)[:, 1:] # targets
+        # y[:, :-config.lenOfEachPath] = -1 # empty
         # advance the position in the tensor
         self.current_position += B * T * self.num_processes
         # if loading the next batch would be out of bounds, advance to next shard
@@ -309,7 +461,7 @@ class DataLoaderLite:
             self.current_shard = (self.current_shard + 1) % len(self.shards)
             self.tokens = load_tokens(self.shards[self.current_shard])
             self.current_position = B * T * self.process_rank
-        return x, y
+        return x
 
 # -----------------------------------------------------------------------------
 # simple launch:
@@ -321,6 +473,8 @@ if __name__ == "__main__":
     from torch.distributed import init_process_group, destroy_process_group
     from torch.nn.parallel import DistributedDataParallel as DDP
     import torch.distributed as dist
+
+    results = {}
 
     # set up DDP (distributed data parallel).
     # torchrun command sets the env variables RANK, LOCAL_RANK, and WORLD_SIZE
@@ -480,12 +634,12 @@ if __name__ == "__main__":
     eval_dataloader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val")
 
     # infinite data loader
-    def cycle(iterable):
-        while True:
-            # check if iterable has exahusted
-            for x in iterable:
-                yield x
-    inf_dataloader = cycle(train_loader)
+    # def cycle(loader):
+    #     while True:
+    #         # check if iterable has exahusted
+    #         yield loader.next_batch()
+
+    # inf_dataloader = cycle(train_loader)
 
 
 
@@ -624,7 +778,7 @@ if __name__ == "__main__":
         grad_accum_steps = 1
         for micro_step in range(grad_accum_steps):
             print("micro_step", micro_step)
-            text = next(inf_dataloader)['text']
+            # text = next(inf_dataloader)['text']
             x = train_loader.next_batch()
             x = x.to(device)
             # TODO: look into why EOS tokens (id 1) are missing
@@ -632,6 +786,7 @@ if __name__ == "__main__":
             # x = torch.as_tensor(tokens, device=device_type)
             graph_description_length = config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3
             fb_pairs, labels, dt, midpoints = create_cartesian_product_examples(T-graph_description_length)
+            # print(fb_pairs, labels, dt, midpoints)
             fb_pairs += graph_description_length
             labels += graph_description_length
             midpoints += graph_description_length
@@ -661,12 +816,15 @@ if __name__ == "__main__":
                     text_labels = x[:, _labels[i:i+minibatch_size]]
                     logits, loss, loss_info = text_head(_f, _b, targets=text_labels, return_info=True)
                     loss_before_mean = loss_info['loss_before_mean']
-                    _dt = _dt[None].repeat(64, 1)
+                    _dt = _dt[None].repeat(B, 1)
+                    # print(logits, loss, loss_info)
+                    # print(_dt.shape)
+                    # print(_dt)
                     print("k = 2 loss:", loss_before_mean[_dt.view(-1)==2].mean().item())
                     print("k = rand loss:", loss_before_mean[_dt.view(-1)!=2].mean().item())
                     
                     # conditional VAE stuff here.
-                    import ipdb; ipdb.set_trace()
+                    # import ipdb; ipdb.set_trace()
                     def loss_latent_inpaint(starts, goals, targets, deltas):
                         # get _b_mid
                         # get k and embedding layer.
@@ -676,7 +834,8 @@ if __name__ == "__main__":
                     
                     
                     # decode some examples to text space for visualization.
-                    if step % 100 == 0 and i == 0:
+                    if False:
+                    # if step % 100 == 0 and i == 0:
                         print(f"Step {step}: Train inputs, predictions, and labels")
                         for i in range(4):
                             vforward_tokens = tokens[0, :_fb_pairs[i, 0] + 1]
@@ -753,6 +912,10 @@ if __name__ == "__main__":
             print(f"step {step:5d} | loss: {loss_accum.item():.6f} | lr {lr:.4e} | norm: {total_norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}")
             with open(log_file, "a") as f:
                 f.write(f"{step} train {loss_accum.item():.6f}\n")
+        if step %15 == 0 and step!=0:
+            
+            results = evaluate2(text_head, Encoder(ForwardEncoderConfig(n_layer=6, block_size=T, n_head=8,vocab_size=1000)), Encoder(BackwardEncoderConfig(n_layer=6, block_size=T, n_head=8,vocab_size=1000)), data_root = "tokenized_data", temperature = 1.0, top_k = 1, results=None, split = "val", max_batches = 10, B = 256, device=device)
+            # generate(self, forward, backward_embedding, idx, goal, max_length, temperature=1.0, top_k = 1)
     
     if ddp:
         destroy_process_group()
