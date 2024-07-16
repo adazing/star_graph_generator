@@ -74,9 +74,9 @@ class Block(nn.Module):
 class GPTConfig:
     block_size: int = 1024 # max sequence length
     vocab_size: int = 60 # number of tokens: 50,000 BPE merges + 256 bytes tokens + 1 <|endoftext|> token
-    n_layer: int = 12 # number of layers
-    n_head: int = 12 # number of heads
-    n_embd: int = 768 # embedding dimension
+    n_layer: int = 6 # number of layers
+    n_head: int = 6 # number of heads
+    n_embd: int = 384 # embedding dimension
 
 class GPT(nn.Module):
 
@@ -356,9 +356,10 @@ if __name__ == "__main__":
 
     enc = tiktoken.get_encoding("gpt2")
 
-    B = 256 # micro batch size
+    B = 64 # micro batch size
     T = config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3 + config.lenOfEachPath # sequence length
     total_batch_size = B * T # 2**19, ~0.5M, in number of tokens
+
     assert total_batch_size % (B * T * ddp_world_size) == 0, "make sure total_batch_size is divisible by B * T * ddp_world_size"
     grad_accum_steps = total_batch_size // (B * T * ddp_world_size)
     if master_process:
@@ -373,9 +374,7 @@ if __name__ == "__main__":
     torch.set_float32_matmul_precision('high')
 
     # create model
-    model = GPT(GPTConfig(vocab_size=config.maxNodes + 4 ))
-
-
+    model = GPT(GPTConfig(n_layer=6, block_size=T, n_head=6, vocab_size=config.maxNodes + 4))
 
     # model = GPT.from_pretrained("gpt2") # or init from OpenAI GPT-2
     model.to(device)
@@ -390,29 +389,69 @@ if __name__ == "__main__":
 
     # ctx = nullcontext() if device == 'cpu' else torch.amp.autocast(device_type=device, dtype=ptdtype)
 
-    results = {}
-    
-    max_lr = 6e-4
-    min_lr = max_lr * 0.1
-    warmup_steps = 715
-    epochs = 10
-                #         number of batches total  =  validation data token size /  batch_size * length of each line
-    max_steps = epochs * (config.numOfSamples//B - (config.shard_size // (B * (config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3 + config.lenOfEachPath)))) # 1000 steps is ~1 epoch, if data is 500M tokens and batch size is 0.5M tokens
-    def get_lr(it):
-        # 1) linear warmup for warmup_iters steps
-        if it < warmup_steps:
-            return max_lr * (it+1) / warmup_steps
-        # 2) if it > lr_decay_iters, return min learning rate
-        if it > max_steps:
-            return min_lr
-        # 3) in between, use cosine decay down to min learning rate
-        decay_ratio = (it - warmup_steps) / (max_steps - warmup_steps)
-        assert 0 <= decay_ratio <= 1
-        coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff starts at 1 and goes to 0
-        return min_lr + coeff * (max_lr - min_lr)
+
+    # max_lr = 6e-4
+    # min_lr = max_lr * 0.1
+    # warmup_steps = 715
+    # epochs = 10
+    #             #         number of batches total  =  validation data token size /  batch_size * length of each line
+    # max_steps = epochs * (config.numOfSamples//B - (config.shard_size // (B * (config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3 + config.lenOfEachPath)))) # 1000 steps is ~1 epoch, if data is 500M tokens and batch size is 0.5M tokens
+    # def get_lr(it):
+    #     # 1) linear warmup for warmup_iters steps
+    #     if it < warmup_steps:
+    #         return max_lr * (it+1) / warmup_steps
+    #     # 2) if it > lr_decay_iters, return min learning rate
+    #     if it > max_steps:
+    #         return min_lr
+    #     # 3) in between, use cosine decay down to min learning rate
+    #     decay_ratio = (it - warmup_steps) / (max_steps - warmup_steps)
+    #     assert 0 <= decay_ratio <= 1
+    #     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff starts at 1 and goes to 0
+    #     return min_lr + coeff * (max_lr - min_lr)
 
     # optimize!
-    optimizer = raw_model.configure_optimizers(weight_decay=0.1, learning_rate=6e-4, device_type=device_type)
+    # epochs = 10
+    #             #         number of batches total  =  validation data token size /  batch_size * length of each line
+    # max_steps = epochs * (config.numOfSamples//B - (config.shard_size // (B * (config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3 + config.lenOfEachPath)))) # 1000 steps is ~1 epoch, if data is 500M tokens and batch size is 0.5M tokens
+    # def get_lr(it):
+
+    epochs = 100
+                #         number of batches total  =  validation data token size /  batch_size * length of each line
+    max_steps = epochs * (config.numOfSamples//B - (config.shard_size // (B * (config.numOfPathsFromSource * (config.lenOfEachPath - 1) * 3 + 3 + config.lenOfEachPath)))) # 1000 steps is ~1 epoch, if data is 500M tokens and batch size is 0.5M tokens
+    # def get_lr(it):
+    #     return 3e-4
+
+    eval_every = 5000
+
+    optimizer = raw_model.configure_optimizers(weight_decay=0.1, learning_rate=1e-4, device_type=device_type)
+
+    # optimize!
+    # def configure_optimizers(models, weight_decay, learning_rate, device_type):
+    #     # start with all of the candidate parameters (that require grad)
+    #     param_dict = {pn: p for m in models for pn, p in m.named_parameters()}
+    #     param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
+    #     # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
+    #     # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
+    #     decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]
+    #     nodecay_params = [p for n, p in param_dict.items() if p.dim() < 2]
+    #     optim_groups = [
+    #         {'params': decay_params, 'weight_decay': weight_decay},
+    #         {'params': nodecay_params, 'weight_decay': 0.0}
+    #     ]
+    #     num_decay_params = sum(p.numel() for p in decay_params)
+    #     num_nodecay_params = sum(p.numel() for p in nodecay_params)
+    #     if master_process:
+    #         print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
+    #         print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
+    #     # Create AdamW optimizer and use the fused version if it is available
+    #     fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
+    #     use_fused = fused_available and device_type == "cuda"
+    #     if master_process:
+    #         print(f"using fused AdamW: {use_fused}")
+    #     optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=(0.9, 0.95), eps=1e-8, fused=use_fused)
+    #     return optimizer
+    # optimizer = configure_optimizers(raw_models.values(), weight_decay=0.0, learning_rate=1e-4, device_type=device_type)
+
 
     # create the log directory we will write checkpoints to and log to
     log_dir = "log"
@@ -422,52 +461,56 @@ if __name__ == "__main__":
         pass
 
     # print(device, torch.cuda.memory_allocated(device))
-    eval_every = 100
-        
+
+    results = {}
+
     for step in range(max_steps):
         # print(device, torch.cuda.memory_allocated(device))
         t0 = time.time()
         last_step = (step == max_steps - 1)
 
         # once in a while evaluate our validation loss
-        if step % 1 == 0 or last_step:
-            model.eval()
-            val_loader.reset()
-            with torch.no_grad():
-                # print("blah1", device, torch.cuda.memory_allocated(device))
-                val_loss_accum = 0.0
-                val_loss_steps = 20
-                for _ in range(val_loss_steps):
-                    # print("blah2", device, torch.cuda.memory_allocated(device))
-                    x, y = val_loader.next_batch()
-                    x, y = x.to(device), y.to(device)
-                    # print(x[0])
-                    # print(y[0])
-                    # print("blah3", device, torch.cuda.memory_allocated(device))
-                    with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
-                        # print("blah3", device, torch.cuda.memory_allocated(device))
-                        logits, loss = model(x, y)
-                        # print("blah4", device, torch.cuda.memory_allocated(device))
-                    loss = loss / val_loss_steps
-                    val_loss_accum += loss.detach()
-            if ddp:
-                dist.all_reduce(val_loss_accum, op=dist.ReduceOp.AVG)
-            if master_process:
-                print(f"validation loss: {val_loss_accum.item():.4f}")
-                with open(log_file, "a") as f:
-                    f.write(f"{step} val {val_loss_accum.item():.4f}\n")
-                if step > 0 and (step % 500 == 0 or last_step):
-                    # optionally write model checkpoints
-                    checkpoint_path = os.path.join(log_dir, f"model_{step:05d}.pt")
-                    checkpoint = {
-                        'model': raw_model.state_dict(),
-                        'config': raw_model.config,
-                        'step': step,
-                        'val_loss': val_loss_accum.item()
-                    }
-                    # you might also want to add optimizer.state_dict() and
-                    # rng seeds etc., if you wanted to more exactly resume training
-                    torch.save(checkpoint, checkpoint_path)
+        # if step % 1 == 0 or last_step:
+        #     model.eval()
+        #     val_loader.reset()
+        #     with torch.no_grad():
+        #         # print("blah1", device, torch.cuda.memory_allocated(device))
+        #         val_loss_accum = 0.0
+        #         val_loss_steps = 20
+        #         for _ in range(val_loss_steps):
+        #             # print("blah2", device, torch.cuda.memory_allocated(device))
+        #             x, y = val_loader.next_batch()
+        #             x, y = x.to(device), y.to(device)
+        #             # print(x[0])
+        #             # print(y[0])
+        #             # print("blah3", device, torch.cuda.memory_allocated(device))
+        #             with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+        #                 # print("blah3", device, torch.cuda.memory_allocated(device))
+        #                 logits, loss = model(x, y)
+        #                 # print("blah4", device, torch.cuda.memory_allocated(device))
+        #             loss = loss / val_loss_steps
+        #             val_loss_accum += loss.detach()
+        #     if ddp:
+        #         dist.all_reduce(val_loss_accum, op=dist.ReduceOp.AVG)
+        #     if master_process:
+        #         print(f"validation loss: {val_loss_accum.item():.4f}")
+        #         with open(log_file, "a") as f:
+        #             f.write(f"{step} val {val_loss_accum.item():.4f}\n")
+        #         if step > 0 and (step % 500 == 0 or last_step):
+        #             # optionally write model checkpoints
+        #             checkpoint_path = os.path.join(log_dir, f"model_{step:05d}.pt")
+        #             checkpoint = {
+        #                 'model': raw_model.state_dict(),
+        #                 'config': raw_model.config,
+        #                 'step': step,
+        #                 'val_loss': val_loss_accum.item()
+        #             }
+        #             # you might also want to add optimizer.state_dict() and
+        #             # rng seeds etc., if you wanted to more exactly resume training
+        #             torch.save(checkpoint, checkpoint_path)
+
+        # abcded151234
+        # bcded1512345
 
         # do one step of the optimization
         model.train()
@@ -491,19 +534,21 @@ if __name__ == "__main__":
             dist.all_reduce(loss_accum, op=dist.ReduceOp.AVG)
         norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         # determine and set the learning rate for this iteration
-        lr = get_lr(step)
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = lr
+        # lr = get_lr(step)
+        # for param_group in optimizer.param_groups:
+        #     param_group['lr'] = lr
         optimizer.step()
         torch.cuda.synchronize() # wait for the GPU to finish work
         t1 = time.time()
         dt = t1 - t0 # time difference in seconds
         tokens_processed = train_loader.B * train_loader.T * grad_accum_steps * ddp_world_size
         tokens_per_sec = tokens_processed / dt
-        if master_process:
-            print(f"step {step:5d} | loss: {loss_accum.item():.6f} | lr {lr:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}")
-            with open(log_file, "a") as f:
-                f.write(f"{step} train {loss_accum.item():.6f}\n")
+
+        if step % 1000 == 0:
+            if master_process:
+                print(f"step {step:5d} | loss: {loss_accum.item():.6f} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}")
+                with open(log_file, "a") as f:
+                    f.write(f"{step} train {loss_accum.item():.6f}\n")
         if step % eval_every == 0:
             # Generate sequences and check accuracies
             # if args.eval_train:

@@ -167,7 +167,7 @@ class TextHead(nn.Module):
         # self.lm_head = nn.Linear(config.n_f_enc + config.n_goal, config.vocab_size, bias=False)
         # Linear, LeakyRelu, Linear
         self.lm_head = nn.Sequential(
-            nn.Linear(config.n_f_enc + config.n_goal, 512, bias=False),
+            nn.Linear(config.n_f_enc, 512, bias=False),
             nn.LeakyReLU(),
             nn.Linear(512, config.vocab_size, bias=False),
         )
@@ -185,8 +185,8 @@ class TextHead(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
     
-    def forward(self, forward_embedding, backward_embedding, targets=None, return_info=False):
-        x = torch.concat([forward_embedding, backward_embedding], dim=-1)
+    def forward(self, forward_embedding, targets=None, return_info=False):
+        x = forward_embedding
         # x = self.ln_f(x)
         # logits = self.lm_head(x)
         logits = self.lm_head(x)
@@ -249,9 +249,9 @@ class TextHead(nn.Module):
                     # print(forward.shape)
                     backward = b_enc(goal)[:, -1:, :] # gets b(987) from [b(9), b(98), b(987)]
                     # print(backward.shape)
-                    # logits, _ = text_head(forward, backward)
+                    # logits, _ = text_head(forward)
                     # Generate logits for the current sequence
-                    logits, _ = self.forward(forward, backward)
+                    logits, _ = self.forward(forward)
                     # Take the logits from the last time step
                     logits = logits[:, -1, :] / temperature
                     if top_k is not None:
@@ -778,7 +778,7 @@ if __name__ == "__main__":
                 _f = forward[:, _fb_pairs[:, 0]]
                 _b = _backward[:, _fb_pairs[:, 1]]
                 text_labels = x[:, _labels]
-                logits, loss, loss_info = text_head(_f, _b, targets=text_labels, return_info=True)
+                logits, loss, loss_info = text_head(_f, targets=text_labels, return_info=True)
                 loss_before_mean = loss_info['loss_before_mean']
                 # _dt = _dt[None].repeat(B, 1)
                 # print(logits, loss, loss_info)
